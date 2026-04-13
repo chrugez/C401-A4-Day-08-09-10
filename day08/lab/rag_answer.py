@@ -135,9 +135,54 @@ def retrieve_sparse(query: str, top_k: int = TOP_K_SEARCH) -> List[Dict[str, Any
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
     """
     # TODO Sprint 3: Implement BM25 search
-    # Tạm thời return empty list
-    print("[retrieve_sparse] Chưa implement — Sprint 3")
-    return []
+    from rank_bm25 import BM25Okapi
+    import chromadb
+    from index import CHROMA_DB_DIR
+
+    cache = getattr(retrieve_sparse, "_cache", None)
+    if cache is None:
+        client = chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
+        collection = client.get_collection("rag_lab")
+        results = collection.get(include=["documents", "metadatas"])
+
+        all_chunks = [
+            {
+                "text": doc,
+                "metadata": meta or {},
+            }
+            for doc, meta in zip(results.get("documents", []), results.get("metadatas", []))
+        ]
+        tokenized_corpus = [
+            re.findall(r"[a-z0-9-]+", chunk["text"].lower())
+            for chunk in all_chunks
+        ]
+        bm25 = BM25Okapi(tokenized_corpus)
+        cache = {
+            "all_chunks": all_chunks,
+            "bm25": bm25,
+        }
+        retrieve_sparse._cache = cache
+
+    tokenized_query = re.findall(r"[a-z0-9-]+", query.lower())
+    scores = cache["bm25"].get_scores(tokenized_query)
+    top_indices = sorted(
+        range(len(scores)),
+        key=lambda i: scores[i],
+        reverse=True,
+    )[:top_k]
+
+    sparse_results = []
+    for idx in top_indices:
+        chunk = cache["all_chunks"][idx]
+        sparse_results.append(
+            {
+                "text": chunk["text"],
+                "metadata": chunk["metadata"],
+                "score": float(scores[idx]),
+            }
+        )
+
+    return sparse_results
 
 
 # =============================================================================
@@ -175,8 +220,59 @@ def retrieve_hybrid(
     """
     # TODO Sprint 3: Implement hybrid RRF
     # Tạm thời fallback về dense
-    print("[retrieve_hybrid] Chưa implement RRF — fallback về dense")
-    return retrieve_dense(query, top_k)
+    # print("[retrieve_hybrid] Chưa implement RRF — fallback về dense")
+    # return retrieve_dense(query, top_k)
+    dense_results = retrieve_dense(query, top_k=top_k)
+    sparse_results = retrieve_sparse(query, top_k=top_k)
+
+    rrf_k = 60
+    merged: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+
+    for rank, result in enumerate(dense_results, 1):
+        meta = result.get("metadata", {})
+        key = (
+            meta.get("source", ""),
+            meta.get("section", ""),
+            result.get("text", ""),
+        )
+        item = merged.setdefault(
+            key,
+            {
+                "text": result.get("text", ""),
+                "metadata": meta,
+                "score": 0.0,
+                "dense_rank": None,
+                "sparse_rank": None,
+            },
+        )
+        item["score"] += dense_weight * (1 / (rrf_k + rank))
+        item["dense_rank"] = rank
+
+    for rank, result in enumerate(sparse_results, 1):
+        meta = result.get("metadata", {})
+        key = (
+            meta.get("source", ""),
+            meta.get("section", ""),
+            result.get("text", ""),
+        )
+        item = merged.setdefault(
+            key,
+            {
+                "text": result.get("text", ""),
+                "metadata": meta,
+                "score": 0.0,
+                "dense_rank": None,
+                "sparse_rank": None,
+            },
+        )
+        item["score"] += sparse_weight * (1 / (rrf_k + rank))
+        item["sparse_rank"] = rank
+
+    return sorted(
+        merged.values(),
+        key=lambda item: item["score"],
+        reverse=True,
+    )[:top_k]
 
 
 # =============================================================================

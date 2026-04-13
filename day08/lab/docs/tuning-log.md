@@ -43,16 +43,15 @@ llm_model = _____
 
 ## Variant 1 (Sprint 3)
 
-**Ngày:** ___________  
-**Biến thay đổi:** ___________  
+**Ngày:** 2026-04-13  
+**Biến thay đổi:** Hybrid retrieval (`retrieve_dense()` + `retrieve_sparse()` + RRF)  
 **Lý do chọn biến này:**
-> TODO: Giải thích theo evidence từ baseline results.
-> Ví dụ: "Chọn hybrid vì q07 (alias query) và q09 (mã lỗi ERR-403) đều thất bại với dense.
-> Corpus có cả ngôn ngữ tự nhiên (policy) lẫn tên riêng/mã lỗi (ticket code, SLA label)."
+> Chọn hybrid vì corpus hiện tại có cả câu tự nhiên (policy, SOP, HR) lẫn keyword/mã ngắn như `P1`, `ERR-403-AUTH`, và alias kiểu `Approval Matrix`.
+> Dense retrieval mạnh ở ngữ nghĩa, nhưng dễ kéo nhầm chunk khi query chứa keyword ngắn; BM25 giúp giữ exact match ở section/từ khóa, rồi RRF gộp hai tín hiệu mà vẫn chỉ đổi một biến trong pipeline.
 
 **Config thay đổi:**
 ```
-retrieval_mode = "hybrid"   # hoặc biến khác
+retrieval_mode = "hybrid"
 # Các tham số còn lại giữ nguyên như baseline
 ```
 
@@ -65,12 +64,12 @@ retrieval_mode = "hybrid"   # hoặc biến khác
 | Completeness | ?/5 | ?/5 | +/- |
 
 **Nhận xét:**
-> TODO: Variant 1 cải thiện ở câu nào? Tại sao?
-> Có câu nào kém hơn không? Tại sao?
+> Kỳ vọng hybrid cải thiện các query có alias/keyword rõ như `Approval Matrix` hoặc mã lỗi, vì sparse retrieval kéo được exact term còn dense giữ được ngữ nghĩa tổng thể.
+> Cần chạy scorecard Sprint 4 để đo chính thức mức tăng/giảm trên toàn bộ bộ câu hỏi.
 
 **Kết luận:**
-> TODO: Variant 1 có tốt hơn baseline không?
-> Bằng chứng là gì? (điểm số, câu hỏi cụ thể)
+> Đã implement end-to-end variant hybrid. Kết luận định lượng sẽ chốt sau khi chạy evaluation/scorecard ở Sprint 4.
+> Bằng chứng hiện tại là pipeline `retrieve_hybrid()` đã chạy được và có thể so sánh trực tiếp với baseline bằng `compare_retrieval_strategies()`.
 
 ---
 
